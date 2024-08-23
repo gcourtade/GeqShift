@@ -1,5 +1,10 @@
 # GeqShift: Highly accurate chemical shift prediction using a geometrically aware graph neural network.
 
+## GeqShift predictions on Google Colab
+
+[<img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>](https://colab.research.google.com/github/gcourtade/GeqShift/blob/main/GeqShift.ipynb)
+
+## About
 This repository contains code accompanying the paper [Carbohydrate NMR chemical shift predictions using E(3) equivariant graph neural networks](https://arxiv.org/abs/2311.12657).
 
 ## Citation
