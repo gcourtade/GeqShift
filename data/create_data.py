@@ -23,7 +23,7 @@ def get_cut_off_graph(edge_index, edge_attr, p, cut_off = 6.0):
     edge_index, edge_attr = to_undirected(edge_index, edge_attr, reduce  = "max")
     return edge_index, edge_attr
 
-def generate_conformations(m_, nbr_confs = 10):
+def generate_conformations(m_, nbr_confs):
     params = Chem.rdDistGeom.ETKDGv3()
     params.useSmallRingTorsions = True
     params.useMacrocycleTorsions = True
@@ -68,7 +68,7 @@ def generate_conformations(m_, nbr_confs = 10):
 
     return conformations, energies, m_
 
-def create_conformer(mols, nbr_confs = 10):
+def create_conformer(mols, nbr_confs):
     for mol in mols:
         name = mol.GetProp("_Name")
 
@@ -130,12 +130,11 @@ def add_conformations_to_test_dataset(dataset):
     test_datas = []
     for data in dataset:
         datas_ = []
-        name = data.name[0]
+        name = data.name
         name = name.replace("->","")
         name = name.replace("(","")
         name = name.replace(")","")
         n_atoms = data.x.size(0)
-
         conf_path = "conformations//" + name + ".pickle"
         k = 0
         if os.path.exists(conf_path):
@@ -161,7 +160,7 @@ def add_conformations_to_test_dataset(dataset):
                                         "loader" : DataLoader(datas_, batch_size = len(datas_), shuffle=False )})
     return test_datas
 
-def main(path_to_mono, path_to_di, path_to_tri, fold):
+def main(path_to_mono, path_to_di, path_to_tri, fold, nbr_confs):
     np.random.seed(0)
     torch.manual_seed(0)
 
@@ -175,6 +174,7 @@ def main(path_to_mono, path_to_di, path_to_tri, fold):
         os.makedirs("roots/hydrogen/mono")              
     mols_mono_carbon_d = list(Carbons13C("roots/carbon/mono", mols_mono))
     mols_mono_hydrogen_d = list(Hydrogens1H("roots/hydrogen/mono", mols_mono))
+
 
     mols_di = []
     with Chem.SDMolSupplier(path_to_di) as suppl:
@@ -200,9 +200,9 @@ def main(path_to_mono, path_to_di, path_to_tri, fold):
 
     if not os.path.exists("conformations"):  
         os.makedirs("conformations") 
-    create_conformer(mols_mono)
-    create_conformer(mols_di,1)
-    create_conformer(mols_tri,1)
+    create_conformer(mols_mono, nbr_confs)
+    create_conformer(mols_di, nbr_confs)
+    create_conformer(mols_tri, nbr_confs)
 
     train_data_carbon_mo, test_data_carbon_mo = train_test_split(mols_mono_carbon_d, fold)
     train_data_carbon_di, test_data_carbon_di = train_test_split(mols_di_carbon_d, fold)
@@ -227,6 +227,8 @@ def main(path_to_mono, path_to_di, path_to_tri, fold):
     with open("datasets/train_data_1H.pickle", 'wb') as handle:
         pickle.dump(train_data_hydrogen, handle)
 
+ 
+
     test_data_carbon_mo = add_conformations_to_test_dataset(test_data_carbon_mo)
     test_data_carbon_di = add_conformations_to_test_dataset(test_data_carbon_di)
     test_data_carbon_tri = add_conformations_to_test_dataset(test_data_carbon_tri)
@@ -234,6 +236,7 @@ def main(path_to_mono, path_to_di, path_to_tri, fold):
     test_data_hydrogen_mo = add_conformations_to_test_dataset(test_data_hydrogen_mo)
     test_data_hydrogen_di = add_conformations_to_test_dataset(test_data_hydrogen_di)
     test_data_hydrogen_tri = add_conformations_to_test_dataset(test_data_hydrogen_tri)
+
 
     with open("datasets/test_data_13C_mo.pickle", 'wb') as handle:
         pickle.dump(test_data_carbon_mo, handle)
@@ -251,10 +254,11 @@ def main(path_to_mono, path_to_di, path_to_tri, fold):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description='simple distributed training job')
-    parser.add_argument('--data_path_mo', type=str, help='Path to train dataset mono')
-    parser.add_argument('--data_path_di', type=str, help='Path to train dataset di')
-    parser.add_argument('--data_path_tri', type=str, help='Path to train dataset tri')
-    parser.add_argument('--fold', type=int, default=1, help='Fold in k-fold')
+    parser.add_argument('--data_path_mo', type=str, default='dataset/casper_mono.sdf', help='Path to train dataset mono')
+    parser.add_argument('--data_path_di', type=str, default='dataset/casper_dimer.sdf', help='Path to train dataset di')
+    parser.add_argument('--data_path_tri', type=str, default='dataset/casper_trimer.sdf', help='Path to train dataset tri')
+    parser.add_argument('--nbr_confs', type=int, default=100, help='Number of conformations')
+    parser.add_argument('--fold', type=int, default=10, help='Fold in k-fold')
 
     args = parser.parse_args()
-    main(args.data_path_mo, args.data_path_di, args.data_path_tri, args.fold)
+    main(args.data_path_mo, args.data_path_di, args.data_path_tri, args.fold, args.nbr_confs)

@@ -6,6 +6,7 @@ from model.model import O3Transformer
 from model.norms import EquivariantLayerNorm
 from e3nn import o3
 import pickle
+import os 
 
 test_criterion = torch.nn.L1Loss()
 
@@ -74,6 +75,15 @@ class Trainer:
         torch.save(ckp, PATH)
         print(f"Epoch {epoch} | Training checkpoint saved at {PATH}")
 
+    def _load_checkpoint(self, epoch):
+        PATH = "_checkpoint_epoch_" + str(epoch) + ".pkl"
+        if os.path.exists(PATH):
+            checkpoint = torch.load(PATH)
+            self.model.load_state_dict(checkpoint)
+            print(f"Loaded checkpoint for epoch {epoch}")
+            return True
+        return False
+
     def derive_mean_and_std(self):
         nmrs = []
         for data in self.train_data_carb:
@@ -86,17 +96,33 @@ class Trainer:
         self.mean = nmrs.mean()
         self.std = nmrs.std()
 
+                              
     def train(self, max_epochs: int, criterion, lr_reduce):
-        
+        start_epoch = 0
+
+        # Check for existing checkpoints and load the latest one
         for epoch in range(max_epochs):
+            if self._load_checkpoint(epoch):
+                start_epoch = epoch + 1
+            else:
+                break
+
+        # If all epochs have checkpoints, skip training
+        if start_epoch >= max_epochs:
+            print("All epochs have checkpoints. Skipping training.")
+            return 
+
+        # Training loop
+        for epoch in range(start_epoch, max_epochs):
             loss = self._run_epoch(epoch, criterion)
             print(f"Train loss {loss}")
             self._save_checkpoint(epoch)
-            self.optimizer.param_groups[0]['lr'] = self.optimizer.param_groups[0]['lr']*lr_reduce
-                              
+            self.optimizer.param_groups[0]['lr'] *= lr_reduce
 
                 
     def test(self, test_data: Data, message: str):
+        print(message, '...')
+
         torch.cuda.empty_cache()
         criterion = torch.nn.L1Loss()
     
@@ -125,9 +151,12 @@ class Trainer:
             if nmr_trues:
                     nmr_trues_ = torch.cat(nmr_trues)
                     nmr_preds_ = torch.cat(nmr_preds)
-    
+                    print('NMR trues', nmr_trues_)
+                    print('NMR preds', nmr_preds_)
                     l_lest = criterion(nmr_trues_.flatten(), nmr_preds_.flatten()).item()
                     print("Test error is " + str(l_lest) + " for " + message + ".")
+        print('mean', self.mean)
+        print('std', self.std)
         self.model.train()
                 
 
@@ -177,10 +206,12 @@ def prepare_test_dataloader(dataset: Dataset, batch_size: int):
         shuffle=False)
 
 def main(epochs: int, batch_size: int, train_path: str, test_path_mo: str, test_path_di: str, test_path_tri: str):
-
+    print("Load TT datasets...")
     train_carb, test_data_mo, test_data_di, test_data_tri, model = load_train_test_objs(train_path, test_path_mo, test_path_di, test_path_tri)
 
     train_data_carb = prepare_dataloader(train_carb, batch_size)   
+    
+    print("Set up optimizer...")
     
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 
@@ -188,7 +219,12 @@ def main(epochs: int, batch_size: int, train_path: str, test_path_mo: str, test_
     
     
     criterion = torch.nn.L1Loss()
+
+    print("Training...")
+
     trainer.train(epochs, criterion, 0.1)
+
+    print("Testing...")
     trainer.test(test_data_mo,"mono")
     trainer.test(test_data_di,"di")
     trainer.test(test_data_tri, "tri")
@@ -203,6 +239,6 @@ if __name__ == "__main__":
     parser.add_argument('--test_path_tri', type=str, help='Path to test dataset')
 
     parser.add_argument('--batch_size', default=32, type=int, help='Path to test dataset')
-    parser.add_argument('--epochs', default=3, type=int, help='Path to test dataset')
+    parser.add_argument('--epochs', default=20, type=int, help='Path to test dataset')
     args = parser.parse_args()
     main(args.epochs, args.batch_size, args.train_path, args.test_path_mo, args.test_path_di, args.test_path_tri)
