@@ -8,7 +8,7 @@
 This repository contains code accompanying the paper [Carbohydrate NMR chemical shift predictions using E(3) equivariant graph neural networks](https://arxiv.org/abs/2311.12657).
 
 ## Citation
-If you find our code and/or [our paper](https://arxiv.org/abs/2311.12657) interesting or helpful, please consider citing:
+If you find the code and/or [paper](https://doi.org/10.1039/D4RA03428G) interesting or helpful, please cite:
 
     @article{baankestad2023carbohydrate,
       title={Carbohydrate NMR chemical shift predictions using E (3) equivariant graph neural networks},
