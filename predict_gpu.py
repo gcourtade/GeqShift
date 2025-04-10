@@ -5,8 +5,8 @@ from torch_geometric.data import Data, InMemoryDataset
 from torch_geometric.loader import DataLoader
 from torch_geometric.utils import to_undirected, coalesce
 from torch_geometric.nn import radius_graph
-from GeqShift.model.model import O3Transformer
-from GeqShift.model.norms import EquivariantLayerNorm
+from model.model import O3Transformer
+from model.norms import EquivariantLayerNorm
 from e3nn import o3
 from rdkit import Chem
 from rdkit.Chem import AllChem
@@ -142,14 +142,19 @@ def process_mol(smiles_list, mol_name):
         mol = Chem.MolFromSmiles(smiles)
 
         carbon_indices = [atom.GetIdx() for atom in mol.GetAtoms() if atom.GetSymbol() == 'C']
-        spectrum_str = "{"
+        spectrum_str_13C = "{"
+        spectrum_str_1H = "{"
         for idx in carbon_indices:
-            spectrum_str += f"{idx}: {00.0}, "
-        spectrum_str.rstrip(", ")
-        spectrum_str += "}"
-        print(spectrum_str)
-        mol.SetProp("13C Spectrum", spectrum_str)
-    
+            spectrum_str_13C += f"{idx}: {00.0}, "
+            spectrum_str_1H += f"{idx}: [{0.00},{0}], "
+        spectrum_str_13C.rstrip(", ")
+        spectrum_str_1H.rstrip(", ")
+        spectrum_str_13C += "}"
+        spectrum_str_1H += "}"
+        print(spectrum_str_13C)
+        print(spectrum_str_1H)
+        mol.SetProp("13C Spectrum", spectrum_str_13C)
+        mol.SetProp("1H Spectrum", spectrum_str_1H)
         mols.append(mol)
 
     type_idx_list = []
@@ -256,17 +261,20 @@ def mols_to_pdb(mols, pdb_path):
         AllChem.MMFFOptimizeMolecule(mol)
         Chem.MolToPDBFile(mol, pdb_path)
 
-def add_shifts_to_bfactor(pdb_path, output_path, carbon_indices, chemical_shifts):
+def add_shifts_to_bfactor(pdb_path, output_path, carbon_indices, carbon_shifts, hydrogen_shifts):
     u = mda.Universe(pdb_path)
     atoms = u.atoms
-
-    for idx, shift in zip(carbon_indices, chemical_shifts):
-        atoms[idx].bfactor = shift.item()
+    if '13C' in output_path:
+        for idx, carbon_shift in zip(carbon_indices, carbon_shifts):
+            atoms[idx].bfactor = carbon_shift.item()
+    else:
+        for idx, hydrogen_shift in zip(carbon_indices, hydrogen_shifts):
+            atoms[idx].bfactor = hydrogen_shift.item()
 
     with mda.Writer(output_path) as W:
         W.write(u.atoms)
 
-def main(smiles_list: list, mol_name: str, checkpoint_path: str, batch_size: int, nbr_confs: int):
+def main(smiles_list: list, mol_name: str, checkpoint_path_13C: str, checkpoint_path_1H: str, batch_size: int, nbr_confs: int):
     np.random.seed(0)
     torch.manual_seed(0)
 
@@ -285,37 +293,57 @@ def main(smiles_list: list, mol_name: str, checkpoint_path: str, batch_size: int
     pred_data = load_pred_data(pred_data_path)
     pred_loader = prepare_dataloader(pred_data, batch_size)
 
-    model = O3Transformer(norm=EquivariantLayerNorm, n_input=128, n_node_attr=128, n_output=128,
+    model_13C = O3Transformer(norm=EquivariantLayerNorm, n_input=128, n_node_attr=128, n_output=128,
                           irreps_hidden=o3.Irreps("64x0e + 32x1o + 8x2e"), n_layers=7)
 
-    if os.path.exists(checkpoint_path):
-        checkpoint = torch.load(checkpoint_path)
-        model.load_state_dict(checkpoint)
-        print(f"Loaded checkpoint from {checkpoint_path}")
+    model_1H = O3Transformer(norm=EquivariantLayerNorm, n_input=128, n_node_attr=128, n_output=128,
+                          irreps_hidden=o3.Irreps("64x0e + 32x1o + 8x2e"), n_layers=7)
+
+    if os.path.exists(checkpoint_path_13C):
+        checkpoint_13C = torch.load(checkpoint_path_13C)
+        model_13C.load_state_dict(checkpoint_13C)
+        print(f"Loaded checkpoint from {checkpoint_path_13C}")
     else:
-        print(f"Checkpoint {checkpoint_path} not found.")
+        print(f"Checkpoint {checkpoint_path_13C} not found.")
         return
 
-    predictor = Predictor(model, pred_loader)
-    predictions = predictor.predict(pred_data, 'Predict chemical shifts', mean=73.3624, std=23.0723)
-    pred_path = "predict//" + mol_name + "_predictions.pkl"
-    with open(pred_path, 'wb') as handle:
-        pickle.dump(predictions, handle)
-    print("Predictions saved to", pred_path)
+    if os.path.exists(checkpoint_path_1H):
+        checkpoint_1H = torch.load(checkpoint_path_1H)
+        model_1H.load_state_dict(checkpoint_1H)
+        print(f"Loaded checkpoint from {checkpoint_path_1H}")
+    else:
+        print(f"Checkpoint {checkpoint_path_1H} not found.")
+        return
+    
+    predictor_13C = Predictor(model_13C, pred_loader)
+    predictor_1H = Predictor(model_1H, pred_loader)
+    predictions_13C = predictor_13C.predict(pred_data, 'Predict 13C chemical shifts', mean=73.3624, std=23.0723)
+    predictions_1H = predictor_1H.predict(pred_data, 'Predict 1H chemical shifts', mean=3.7660, std=0.7601)
+
+    pred_path_13C = "predict//" + mol_name + "_predictions_13C.pkl"
+    with open(pred_path_13C, 'wb') as handle:
+        pickle.dump(predictions_13C, handle)
+    print("Predictions saved to", pred_path_13C)
+    
+    pred_path_1H = "predict//" + mol_name + "_predictions_1H.pkl"
+    with open(pred_path_1H, 'wb') as handle:
+        pickle.dump(predictions_1H, handle)
+    print("Predictions saved to", pred_path_1H)
 
     pdb_path = "predict//" + mol_name + ".pdb"
     mols_to_pdb(mols, pdb_path)
     print("Coordinates saved to", pdb_path)
 
-    pdb_shifts_path = "predict//" + mol_name + "_shifts.pdb"
-    add_shifts_to_bfactor(pdb_path, pdb_shifts_path, carbon_indices, predictions[0])
-    print("Coordinates with shifts in Bfactor col saved to", pdb_shifts_path)
+    for i in ('13C', '1H'):
+        pdb_shifts_path = f"predict//{mol_name}_{i}_shifts.pdb"
+        add_shifts_to_bfactor(pdb_path, pdb_shifts_path, carbon_indices, predictions_13C[0], predictions_1H[0])
+        print("Coordinates with shifts in Bfactor col saved to", pdb_shifts_path)
 
 
     print("Predicted chemical shifts:")
-    print("13C_idx, CS")
-    for i,j in zip(carbon_indices, predictions[0]):
-        print(i,"{:.2f}".format(j.item()))
+    print("13C_idx 13C_CS 1H_CS")
+    for i,j,k in zip(carbon_indices, predictions_13C[0], predictions_1H[0]):
+        print(f"{i} {j:.2f} {k:.2f}")
 
 if __name__ == "__main__":
     import argparse
@@ -323,8 +351,9 @@ if __name__ == "__main__":
     parser.add_argument('--smiles_list', type=str, nargs='+', help='Molecule SMILES', required=True)
     parser.add_argument('--mol_name', type=str, default='mol1', help='Molecule name')
     parser.add_argument('--nbr_confs', type=int, default=100, help='Number of conformations')
-    parser.add_argument('--checkpoint_path', type=str, help='Path to model checkpoint', required=True)
+    parser.add_argument('--checkpoint_path_13C', type=str, help='Path to model checkpoint for 13C', required=True)
+    parser.add_argument('--checkpoint_path_1H', type=str, help='Path to model checkpoint for 1H', required=True)
     parser.add_argument('--batch_size', default=32, type=int, help='Batch size for prediction')
     args = parser.parse_args()
-    main(args.smiles_list, args.mol_name, args.checkpoint_path, args.batch_size, args.nbr_confs)
+    main(args.smiles_list, args.mol_name, args.checkpoint_path_13C, args.checkpoint_path_1H, args.batch_size, args.nbr_confs)
 
