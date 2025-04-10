@@ -300,7 +300,7 @@ def main(smiles_list: list, mol_name: str, checkpoint_path_13C: str, checkpoint_
                           irreps_hidden=o3.Irreps("64x0e + 32x1o + 8x2e"), n_layers=7)
 
     if os.path.exists(checkpoint_path_13C):
-        checkpoint_13C = torch.load(checkpoint_path_13C)
+        checkpoint_13C = torch.load(checkpoint_path_13C, weights_only=False)
         model_13C.load_state_dict(checkpoint_13C)
         print(f"Loaded checkpoint from {checkpoint_path_13C}")
     else:
@@ -308,7 +308,7 @@ def main(smiles_list: list, mol_name: str, checkpoint_path_13C: str, checkpoint_
         return
 
     if os.path.exists(checkpoint_path_1H):
-        checkpoint_1H = torch.load(checkpoint_path_1H)
+        checkpoint_1H = torch.load(checkpoint_path_1H, weights_only=False)
         model_1H.load_state_dict(checkpoint_1H)
         print(f"Loaded checkpoint from {checkpoint_path_1H}")
     else:
