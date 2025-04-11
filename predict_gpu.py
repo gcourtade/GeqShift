@@ -318,7 +318,7 @@ def main(smiles_list: list, mol_name: str, checkpoint_path_13C: str, checkpoint_
     predictor_13C = Predictor(model_13C, pred_loader)
     predictor_1H = Predictor(model_1H, pred_loader)
     predictions_13C = predictor_13C.predict(pred_data, 'Predict 13C chemical shifts', mean=73.3624, std=23.0723)
-    predictions_1H = predictor_1H.predict(pred_data, 'Predict 1H chemical shifts', mean=3.7660, std=0.7601)
+    predictions_1H = predictor_1H.predict(pred_data, 'Predict 1H chemical shifts', mean=3.7552, std=0.7712)
 
     pred_path_13C = "predict//" + mol_name + "_predictions_13C.pkl"
     with open(pred_path_13C, 'wb') as handle:
